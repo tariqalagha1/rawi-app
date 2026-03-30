@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Rawi Voice</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: transparent;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+    .status {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="status" id="status">جارٍ الاتصال...</div>
+
+  <script>
+    let pc = null;
+    let dc = null;
+    let localStream = null;
+    let isActive = false;
+    let pendingAIText = "";
+    let useElevenLabs = false;
+    let elevenLabsAudio = null;
+    let openaiAudioEl = null;
+    let volumeBoostMultiplier = 1.5;
+    let audioContext = null;
+    let elevenLabsGainNode = null;
+    let openaiGainNode = null;
+    let currentVolume = 1.0;
+
+    const statusEl = document.getElementById('status');
+    
+    function getVolumeBoostMultiplier() {
+      const params = new URLSearchParams(window.location.search);
+      const boost = params.get('volumeBoost') || 'auto';
+      switch (boost) {
+        case '1x': return 1.0;
+        case '2x': return 2.0;
+        case '3x': return 3.0;
+        case '5x': return 5.0;
+        case '7x': return 7.0;
+        case '10x': return 10.0;
+        case 'auto': return 1.5;
+        default: return 1.5;
+      }
+    }
+    
+    function initAudioContext() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      return audioContext;
+    }
+    
+    const ELEVENLABS_BOOST = 6.0;
+    
+    function createBoostedAudio(audioElement, isElevenLabs = false) {
+      const ctx = initAudioContext();
+      const source = ctx.createMediaElementSource(audioElement);
+      const gainNode = ctx.createGain();
+      const baseBoost = isElevenLabs ? ELEVENLABS_BOOST : 1.0;
+      gainNode.gain.value = volumeBoostMultiplier * currentVolume * baseBoost;
+      source.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      return { gainNode, isElevenLabs };
+    }
+    
+    volumeBoostMultiplier = getVolumeBoostMultiplier();
+    console.log('Volume boost multiplier:', volumeBoostMultiplier);
+
+    function sendToRN(type, data) {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...data }));
+      }
+    }
+
+    function updateStatus(text) {
+      statusEl.textContent = text;
+      sendToRN('status', { text });
+    }
+
+    async function playElevenLabsTTS(text) {
+      try {
+        const response = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voice: 'tariq' })
+        });
+
+        if (!response.ok) {
+          console.log('ElevenLabs TTS failed, using OpenAI voice instead');
+          useElevenLabs = false;
+          if (openaiAudioEl) {
+            openaiAudioEl.muted = false;
+          }
+          return;
+        }
+
+        const data = await response.json();
+        if (data.audio_base64) {
+          if (elevenLabsAudio) {
+            elevenLabsAudio.pause();
+            elevenLabsAudio.src = '';
+          }
+          
+          elevenLabsAudio = new Audio('data:audio/mp3;base64,' + data.audio_base64);
+          elevenLabsAudio.crossOrigin = 'anonymous';
+          
+          try {
+            const result = createBoostedAudio(elevenLabsAudio, true);
+            elevenLabsGainNode = result.gainNode;
+            console.log('Applied ElevenLabs 6x boost for Tariq voice');
+          } catch (e) {
+            console.log('Web Audio API not available, using standard volume');
+            elevenLabsAudio.volume = Math.min(1.0, volumeBoostMultiplier * currentVolume * ELEVENLABS_BOOST);
+          }
+          
+          elevenLabsAudio.onended = () => {
+            updateStatus('متصل - تحدث الآن');
+            sendToRN('aiSpeaking', { speaking: false });
+          };
+          elevenLabsAudio.onerror = () => {
+            updateStatus('متصل - تحدث الآن');
+            sendToRN('aiSpeaking', { speaking: false });
+          };
+          
+          updateStatus('رواي يتحدث...');
+          sendToRN('aiSpeaking', { speaking: true });
+          await elevenLabsAudio.play();
+        }
+      } catch (err) {
+        console.error('ElevenLabs TTS error:', err);
+        useElevenLabs = false;
+        if (openaiAudioEl) {
+          openaiAudioEl.muted = false;
+        }
+      }
+    }
+
+    async function startCall() {
+      try {
+        updateStatus('جارٍ الاتصال...');
+
+        const params = new URLSearchParams(window.location.search);
+        const voice = params.get('voice') || 'alloy';
+        const instructions = params.get('instructions') || '';
+
+        useElevenLabs = (voice === 'tariq');
+        console.log('Starting call with voice:', voice, 'useElevenLabs:', useElevenLabs);
+        console.log('Instructions length:', instructions.length);
+
+        const sessionRes = await fetch('/api/realtime/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ voice, instructions })
+        });
+
+        if (!sessionRes.ok) {
+          const errText = await sessionRes.text();
+          console.error('Session error:', errText);
+          throw new Error('Session failed: ' + errText);
+        }
+        
+        const sessionData = await sessionRes.json();
+        const ephemeralKey = sessionData.client_secret?.value;
+        
+        if (!ephemeralKey) {
+          console.error('No ephemeral key in response:', sessionData);
+          throw new Error('No ephemeral key');
+        }
+
+        console.log('Got ephemeral key, creating peer connection...');
+
+        pc = new RTCPeerConnection();
+
+        openaiAudioEl = document.createElement('audio');
+        openaiAudioEl.autoplay = true;
+        openaiAudioEl.crossOrigin = 'anonymous';
+        if (useElevenLabs) {
+          openaiAudioEl.muted = true;
+        }
+        document.body.appendChild(openaiAudioEl);
+        
+        pc.ontrack = e => { 
+          console.log('Received audio track');
+          openaiAudioEl.srcObject = e.streams[0];
+          
+          if (!useElevenLabs) {
+            try {
+              const result = createBoostedAudio(openaiAudioEl, false);
+              openaiGainNode = result.gainNode;
+              console.log('Applied volume boost to OpenAI audio:', volumeBoostMultiplier);
+            } catch (err) {
+              console.log('Could not apply volume boost:', err);
+              openaiAudioEl.volume = Math.min(1.0, volumeBoostMultiplier * currentVolume);
+            }
+          }
+        };
+
+        console.log('Requesting microphone access...');
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log('Got microphone access');
+        
+        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+        dc = pc.createDataChannel('oai-events');
+        
+        dc.onopen = () => {
+          console.log('Data channel opened');
+          isActive = true;
+          updateStatus('متصل - تحدث الآن');
+          sendToRN('connected', {});
+        };
+        
+        dc.onmessage = e => {
+          try {
+            handleEvent(JSON.parse(e.data));
+          } catch (err) {
+            console.error('Error handling event:', err);
+          }
+        };
+        
+        dc.onclose = () => {
+          console.log('Data channel closed');
+          endCall();
+        };
+        
+        dc.onerror = (err) => {
+          console.error('Data channel error:', err);
+        };
+
+        console.log('Creating offer...');
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        console.log('Sending SDP to OpenAI...');
+        const sdpRes = await fetch('https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${ephemeralKey}`,
+            'Content-Type': 'application/sdp'
+          },
+          body: offer.sdp
+        });
+
+        if (!sdpRes.ok) {
+          const errText = await sdpRes.text();
+          console.error('SDP error:', errText);
+          throw new Error('SDP failed');
+        }
+        
+        console.log('Got SDP answer, setting remote description...');
+        await pc.setRemoteDescription({ type: 'answer', sdp: await sdpRes.text() });
+        console.log('WebRTC connection established!');
+
+      } catch (err) {
+        console.error('Call error:', err);
+        updateStatus('فشل الاتصال: ' + err.message);
+        sendToRN('error', { message: err.message });
+      }
+    }
+
+    function handleEvent(event) {
+      console.log('Event:', event.type);
+      sendToRN('event', { eventType: event.type, event });
+
+      switch (event.type) {
+        case 'input_audio_buffer.speech_started':
+          updateStatus('أنت تتحدث...');
+          sendToRN('userSpeaking', { speaking: true });
+          if (elevenLabsAudio) {
+            elevenLabsAudio.pause();
+          }
+          break;
+          
+        case 'input_audio_buffer.speech_stopped':
+          updateStatus('جارٍ المعالجة...');
+          sendToRN('userSpeaking', { speaking: false });
+          break;
+          
+        case 'conversation.item.input_audio_transcription.completed':
+          if (event.transcript) {
+            sendToRN('userMessage', { text: event.transcript });
+          }
+          break;
+          
+        case 'response.audio_transcript.delta':
+          pendingAIText += event.delta || '';
+          break;
+          
+        case 'response.audio_transcript.done':
+          const finalText = pendingAIText || event.transcript || '';
+          if (finalText) {
+            sendToRN('aiMessage', { text: finalText });
+            if (useElevenLabs) {
+              playElevenLabsTTS(finalText);
+            }
+          }
+          pendingAIText = '';
+          break;
+          
+        case 'response.audio.started':
+          if (!useElevenLabs) {
+            updateStatus('رواي يتحدث...');
+            sendToRN('aiSpeaking', { speaking: true });
+          }
+          break;
+          
+        case 'response.audio.done':
+        case 'response.done':
+          if (!useElevenLabs) {
+            updateStatus('متصل - تحدث الآن');
+            sendToRN('aiSpeaking', { speaking: false });
+          }
+          break;
+          
+        case 'error':
+          console.error('Realtime error:', event.error);
+          sendToRN('error', { message: event.error?.message || 'Unknown error' });
+          break;
+      }
+    }
+
+    function endCall() {
+      console.log('Ending call...');
+      if (dc) { dc.close(); dc = null; }
+      if (pc) { pc.close(); pc = null; }
+      if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+        localStream = null;
+      }
+      if (elevenLabsAudio) {
+        elevenLabsAudio.pause();
+        elevenLabsAudio = null;
+      }
+      isActive = false;
+      pendingAIText = '';
+      updateStatus('انتهت المكالمة');
+      sendToRN('disconnected', {});
+    }
+
+    window.startCallFromRN = startCall;
+    window.endCallFromRN = endCall;
+    window.setVolumeFromRN = function(vol) {
+      currentVolume = vol;
+      const boostedVolume = volumeBoostMultiplier * vol;
+      const elevenLabsBoostedVolume = boostedVolume * ELEVENLABS_BOOST;
+      
+      if (elevenLabsGainNode) {
+        elevenLabsGainNode.gain.value = elevenLabsBoostedVolume;
+      } else if (elevenLabsAudio) {
+        elevenLabsAudio.volume = Math.min(1.0, elevenLabsBoostedVolume);
+      }
+      
+      if (openaiGainNode) {
+        openaiGainNode.gain.value = boostedVolume;
+      } else if (openaiAudioEl) {
+        openaiAudioEl.volume = Math.min(1.0, boostedVolume);
+      }
+    };
+
+    window.addEventListener('load', () => {
+      console.log('Page loaded, auto-starting call...');
+      setTimeout(startCall, 500);
+    });
+  </script>
+</body>
+</html>

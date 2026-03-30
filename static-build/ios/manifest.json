@@ -1,0 +1,101 @@
+{
+  "id": "09e88b16-0fed-42f5-8c69-fb5b187db64a",
+  "createdAt": "2026-03-01T11:42:22.646Z",
+  "runtimeVersion": "exposdk:54.0.0",
+  "launchAsset": {
+    "key": "bundle-1772365342646-2059",
+    "contentType": "application/javascript",
+    "url": "https://df52d466-a240-4e1f-8972-51ea0fd5c02d-00-1rvwm4tacoth3.pike.replit.dev/1772365342646-2059/_expo/static/js/ios/bundle.js"
+  },
+  "assets": [],
+  "metadata": {},
+  "extra": {
+    "eas": {},
+    "expoClient": {
+      "name": "رواي",
+      "slug": "rawi",
+      "version": "1.0.0",
+      "orientation": "portrait",
+      "icon": "./assets/images/icon.png",
+      "scheme": "rawi",
+      "userInterfaceStyle": "dark",
+      "newArchEnabled": true,
+      "ios": {
+        "supportsTablet": true,
+        "bundleIdentifier": "com.rawi.voicechat"
+      },
+      "android": {
+        "adaptiveIcon": {
+          "backgroundColor": "#1a1a2e",
+          "foregroundImage": "./assets/images/icon.png",
+          "foregroundImageUrl": "https://df52d466-a240-4e1f-8972-51ea0fd5c02d-00-1rvwm4tacoth3.pike.replit.dev/assets/./assets/images/icon.png"
+        },
+        "edgeToEdgeEnabled": true,
+        "predictiveBackGestureEnabled": false,
+        "package": "com.rawi.voicechat"
+      },
+      "web": {
+        "output": "single",
+        "favicon": "./assets/images/favicon.png"
+      },
+      "plugins": [
+        [
+          "expo-splash-screen",
+          {
+            "image": "./assets/images/icon.png",
+            "imageWidth": 200,
+            "resizeMode": "contain",
+            "backgroundColor": "#1a1a2e",
+            "dark": {
+              "backgroundColor": "#1a1a2e"
+            }
+          }
+        ],
+        "expo-web-browser"
+      ],
+      "experiments": {
+        "reactCompiler": true
+      },
+      "_internal": {
+        "isDebug": false,
+        "projectRoot": "/home/runner/workspace",
+        "dynamicConfigPath": {},
+        "staticConfigPath": "/home/runner/workspace/app.json",
+        "packageJsonPath": "/home/runner/workspace/package.json",
+        "pluginHistory": {
+          "expo-splash-screen": {
+            "name": "expo-splash-screen",
+            "version": "31.0.11"
+          },
+          "expo-web-browser": {
+            "name": "expo-web-browser",
+            "version": "15.0.9"
+          }
+        }
+      },
+      "sdkVersion": "54.0.0",
+      "platforms": [
+        "ios",
+        "android",
+        "web"
+      ],
+      "androidStatusBar": {
+        "backgroundColor": "#1a1a2e"
+      },
+      "iconUrl": "https://df52d466-a240-4e1f-8972-51ea0fd5c02d-00-1rvwm4tacoth3.pike.replit.dev/assets/./assets/images/icon.png",
+      "hostUri": "df52d466-a240-4e1f-8972-51ea0fd5c02d-00-1rvwm4tacoth3.pike.replit.dev/ios"
+    },
+    "expoGo": {
+      "debuggerHost": "df52d466-a240-4e1f-8972-51ea0fd5c02d-00-1rvwm4tacoth3.pike.replit.dev/ios",
+      "developer": {
+        "tool": "expo-cli",
+        "projectRoot": "/home/runner/workspace"
+      },
+      "packagerOpts": {
+        "dev": false
+      },
+      "mainModuleName": "client/index"
+    },
+    "scopeKey": "@anonymous/rawi-1d211752-7e46-43d2-80b2-5e607782e83f"
+  }
+}
